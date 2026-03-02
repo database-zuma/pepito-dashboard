@@ -1,23 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
-  BarChart3, Store, Package, RefreshCw, MapPin, DollarSign,
-  ShoppingBag, TrendingUp, X, ChevronDown, Check, Hash,
+  BarChart3, Package, RefreshCw, X, ChevronDown, Check, Hash,
 } from "lucide-react";
-import { formatRupiah, formatNumber } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
 import type { OverviewData, StoreData, ProductData, CategoryBreakdown, SeriesBreakdown, TierBreakdown, FilterOptions, Tab } from "@/lib/types";
 import KpiCards from "@/components/KpiCards";
 import PeriodChart from "@/components/charts/PeriodChart";
 import RegionPieChart from "@/components/charts/RegionPieChart";
-import StoreBarChart from "@/components/charts/StoreBarChart";
 import StoreTable from "@/components/StoreTable";
 import GenderPieChart from "@/components/charts/GenderPieChart";
 import TierBarChart from "@/components/charts/TierBarChart";
 import SeriesBarChart from "@/components/charts/SeriesBarChart";
 import ProductsTable from "@/components/ProductsTable";
+import { formatRupiah } from "@/lib/utils";
 import "@/lib/chart-config";
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -25,7 +24,6 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: "sku-chart", label: "SKU Chart", icon: Package },
   { id: "detail-kode", label: "Detail (Kode)", icon: Hash },
   { id: "detail-size", label: "Detail Size", icon: Hash },
-  { id: "promo", label: "Promo Monitor", icon: TrendingUp },
 ];
 
 interface Filters {
@@ -57,10 +55,9 @@ function countActive(f: Filters): number {
 }
 
 function MultiSelect({
-  label, filterKey, options, selected, onToggle, onClear, onSelectAll,
+  label, options, selected, onToggle, onClear, onSelectAll,
 }: {
   label: string;
-  filterKey: string;
   options: string[];
   selected: string[];
   onToggle: (val: string) => void;
@@ -72,10 +69,9 @@ function MultiSelect({
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = useMemo(
-    () => search ? options.filter(o => o.toLowerCase().includes(search.toLowerCase())) : options,
-    [options, search]
-  );
+  const filtered = search 
+    ? options.filter(o => o.toLowerCase().includes(search.toLowerCase())) 
+    : options;
 
   const allSelected = filtered.length > 0 && filtered.every(o => selected.includes(o));
 
@@ -86,11 +82,6 @@ function MultiSelect({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
-
-  useEffect(() => {
-    if (!open) setSearch("");
-    else setTimeout(() => inputRef.current?.focus(), 0);
-  }, [open]);
 
   const labelText = selected.length === 0 ? label
     : selected.length === 1 ? selected[0]
@@ -145,9 +136,6 @@ function MultiSelect({
                 Clear {label}
               </button>
             )}
-            {filtered.length === 0 && (
-              <p className="px-3 py-2 text-xs text-muted-foreground">No results</p>
-            )}
             {filtered.map(opt => {
               const checked = selected.includes(opt);
               return (
@@ -176,8 +164,7 @@ const fetcher = (url: string) => fetch(url).then(r => r.json());
 function Dashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab") as Tab | null;
-  const [tab, setTab] = useState<Tab>(tabParam || "executive");
+  const [tab, setTab] = useState<Tab>("executive");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
 
@@ -189,11 +176,6 @@ function Dashboard() {
       .then(setFilterOptions)
       .catch(console.error);
   }, []);
-
-  useEffect(() => {
-    const t = searchParams.get("tab") as Tab;
-    if (t && TABS.some(x => x.id === t)) setTab(t);
-  }, [searchParams]);
 
   const toggleFilter = useCallback((key: keyof Filters, val: string) => {
     setFilters(prev => {
@@ -219,13 +201,13 @@ function Dashboard() {
   const filterParams = filtersToParams(filters).toString();
   
   const { data: overviewData, isLoading: overviewLoading } = useSWR<OverviewData>(
-    tab === "executive" ? `/api/pepito/overview?${filterParams}` : null,
+    `/api/pepito/overview?${filterParams}`,
     fetcher,
     { revalidateOnFocus: false, keepPreviousData: true }
   );
 
   const { data: storesData, isLoading: storesLoading } = useSWR<{ stores: StoreData[] }>(
-    tab === "executive" ? `/api/pepito/stores?${filterParams}` : null,
+    `/api/pepito/stores?${filterParams}`,
     fetcher,
     { revalidateOnFocus: false, keepPreviousData: true }
   );
@@ -236,7 +218,7 @@ function Dashboard() {
     seriesBreakdown: SeriesBreakdown[];
     tierBreakdown: TierBreakdown[];
   }>(
-    (tab === "sku-chart" || tab === "detail-kode" || tab === "detail-size") ? `/api/pepito/products?${filterParams}` : null,
+    `/api/pepito/products?${filterParams}`,
     fetcher,
     { revalidateOnFocus: false, keepPreviousData: true }
   );
@@ -268,42 +250,42 @@ function Dashboard() {
           </div>
 
           <div className="flex flex-wrap items-end gap-3 p-3 bg-card border border-border rounded-sm">
-            <MultiSelect label="YEAR" filterKey="year" options={filterOptions?.years ?? []}
+            <MultiSelect label="YEAR" options={filterOptions?.years ?? []}
               selected={filters.year}
               onToggle={(v) => toggleFilter("year", v)}
               onClear={() => setFilterArr("year", [])}
               onSelectAll={(all) => setFilterArr("year", all)} />
-            <MultiSelect label="MONTH" filterKey="month" options={Array.from({ length: 12 }, (_, i) => String(i + 1))}
+            <MultiSelect label="MONTH" options={Array.from({ length: 12 }, (_, i) => String(i + 1))}
               selected={filters.month}
               onToggle={(v) => toggleFilter("month", v)}
               onClear={() => setFilterArr("month", [])}
               onSelectAll={(all) => setFilterArr("month", all)} />
-            <MultiSelect label="REGION" filterKey="region" options={filterOptions?.regions ?? []}
+            <MultiSelect label="REGION" options={filterOptions?.regions ?? []}
               selected={filters.region}
               onToggle={(v) => toggleFilter("region", v)}
               onClear={() => setFilterArr("region", [])}
               onSelectAll={(all) => setFilterArr("region", all)} />
-            <MultiSelect label="STORE" filterKey="store" options={filterOptions?.stores ?? []}
+            <MultiSelect label="STORE" options={filterOptions?.stores ?? []}
               selected={filters.store}
               onToggle={(v) => toggleFilter("store", v)}
               onClear={() => setFilterArr("store", [])}
               onSelectAll={(all) => setFilterArr("store", all)} />
-            <MultiSelect label="GENDER" filterKey="gender" options={filterOptions?.genders ?? []}
+            <MultiSelect label="GENDER" options={filterOptions?.genders ?? []}
               selected={filters.gender}
               onToggle={(v) => toggleFilter("gender", v)}
               onClear={() => setFilterArr("gender", [])}
               onSelectAll={(all) => setFilterArr("gender", all)} />
-            <MultiSelect label="SERIES" filterKey="series" options={filterOptions?.series ?? []}
+            <MultiSelect label="SERIES" options={filterOptions?.series ?? []}
               selected={filters.series}
               onToggle={(v) => toggleFilter("series", v)}
               onClear={() => setFilterArr("series", [])}
               onSelectAll={(all) => setFilterArr("series", all)} />
-            <MultiSelect label="TIER" filterKey="tier" options={filterOptions?.tiers ?? []}
+            <MultiSelect label="TIER" options={filterOptions?.tiers ?? []}
               selected={filters.tier}
               onToggle={(v) => toggleFilter("tier", v)}
               onClear={() => setFilterArr("tier", [])}
               onSelectAll={(all) => setFilterArr("tier", all)} />
-            <MultiSelect label="TIPE" filterKey="tipe" options={filterOptions?.tipes ?? []}
+            <MultiSelect label="TIPE" options={filterOptions?.tipes ?? []}
               selected={filters.tipe}
               onToggle={(v) => toggleFilter("tipe", v)}
               onClear={() => setFilterArr("tipe", [])}
@@ -347,11 +329,33 @@ function Dashboard() {
                   <RegionPieChart data={overviewData.regionSplit} loading={overviewLoading} />
                 </div>
                 <div className="flex flex-col gap-4">
-                  <StoreBarChart data={overviewData.topStores} loading={overviewLoading} />
+                  <div className="bg-card border border-border rounded-sm p-4">
+                    <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] mb-3">Store Ranking by Revenue</h3>
+                    <div className="overflow-y-auto" style={{ maxHeight: '560px' }}>
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-card">
+                          <tr className="bg-muted/40 text-left border-b border-border">
+                            <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px]">#</th>
+                            <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px]">Store</th>
+                            <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px] text-right">Revenue</th>
+                            <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px] text-right">Region</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {storesData?.stores.map((s, i) => (
+                            <tr key={s.storeName} className="border-t border-border/50 hover:bg-muted/30">
+                              <td className="px-2 py-1.5 text-muted-foreground tabular-nums">{i + 1}</td>
+                              <td className="px-2 py-1.5 text-foreground">{s.storeName}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-foreground tabular-nums">{formatRupiah(s.revenue)}</td>
+                              <td className="px-2 py-1.5 text-muted-foreground">{s.region}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
-              
-              {storesData && <StoreTable data={storesData.stores} loading={storesLoading} />}
             </div>
           )}
 
@@ -373,14 +377,6 @@ function Dashboard() {
           {tab === "detail-size" && productsData && !loading && (
             <ProductsTable data={productsData.topProducts} loading={productsLoading} />
           )}
-
-          {tab === "promo" && (
-            <div className="bg-card border border-border rounded-sm p-8 text-center">
-              <TrendingUp className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-sm font-semibold text-foreground mb-2">Promo Monitor</h3>
-              <p className="text-xs text-muted-foreground">Promo tracking coming soon</p>
-            </div>
-          )}
         </main>
 
         <footer className="text-[10px] text-muted-foreground pt-4 border-t border-border flex items-center gap-1.5">
@@ -401,4 +397,3 @@ function DashboardWithSuspense() {
 }
 
 export default DashboardWithSuspense;
-
