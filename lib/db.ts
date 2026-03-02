@@ -1,15 +1,20 @@
 import { Pool } from "pg";
 
-const pool = new Pool({
-  host: process.env.PG_HOST,
-  port: parseInt(process.env.PG_PORT || "5432"),
-  database: process.env.PG_DATABASE,
-  user: process.env.PG_USER,
-  password: process.env.PG_PASSWORD,
-  max: 5,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-});
+// Singleton pool pattern — prevents pool exhaustion on Vercel serverless
+const globalForPg = globalThis as unknown as { pool: Pool | undefined };
+
+export const pool =
+  globalForPg.pool ??
+  new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 5,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPg.pool = pool;
+}
 
 export async function query<T = Record<string, unknown>>(
   text: string,
