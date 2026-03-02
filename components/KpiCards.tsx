@@ -9,17 +9,19 @@ interface KpiCardsProps {
 }
 
 const KPI_CONFIG = [
-  { label: "REVENUE", key: "totalRevenue", format: (v: number) => formatRupiah(v), subtitle: "" },
-  { label: "PAIRS SOLD", key: "totalQty", format: (v: number) => formatNumber(v), subtitle: "" },
-  { label: "TRANSACTIONS", key: "totalInvoices", format: (v: number) => formatNumber(v), subtitle: "" },
-  { label: "ATU", key: "atu", format: (v: number) => v.toFixed(1), subtitle: "Avg Pairs/Transaction" },
-  { label: "ASP", key: "asp", format: (v: number) => formatRupiah(v), subtitle: "Avg Selling Price" },
-  { label: "ATV", key: "atv", format: (v: number) => formatRupiah(v), subtitle: "Avg Transaction Value" },
+  { label: "REVENUE", key: "totalRevenue", format: (v: number) => formatRupiah(v ?? 0), subtitle: "" },
+  { label: "PAIRS SOLD", key: "totalQty", format: (v: number) => formatNumber(v ?? 0), subtitle: "" },
+  { label: "TRANSACTIONS", key: "totalInvoices", format: (v: number) => formatNumber(v ?? 0), subtitle: "" },
+  { label: "ATU", key: "atu", format: (v: number) => (v ?? 0).toFixed(1), subtitle: "Avg Pairs/Transaction" },
+  { label: "ASP", key: "asp", format: (v: number) => formatRupiah(v ?? 0), subtitle: "Avg Selling Price" },
+  { label: "ATV", key: "atv", format: (v: number) => formatRupiah(v ?? 0), subtitle: "Avg Transaction Value" },
 ];
 
 function computeKpis(m?: OverviewMetrics): Record<string, number> {
   if (!m) return { revenue: 0, pairs: 0, transactions: 0, atu: 0, asp: 0, atv: 0 };
-  const { totalRevenue, totalQty, totalInvoices } = m;
+  const totalRevenue = m.totalRevenue ?? 0;
+  const totalQty = m.totalQty ?? 0;
+  const totalInvoices = m.totalInvoices ?? 0;
   return {
     revenue: totalRevenue,
     pairs: totalQty,
