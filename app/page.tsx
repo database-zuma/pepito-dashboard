@@ -6,7 +6,7 @@ import useSWR from "swr";
 import {
   BarChart3, Package, RefreshCw, X, ChevronDown, Check, Hash,
 } from "lucide-react";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, formatRupiah } from "@/lib/utils";
 import type { OverviewData, StoreData, ProductData, CategoryBreakdown, SeriesBreakdown, TierBreakdown, FilterOptions, Tab } from "@/lib/types";
 import KpiCards from "@/components/KpiCards";
 import PeriodChart from "@/components/charts/PeriodChart";
@@ -16,7 +16,6 @@ import GenderPieChart from "@/components/charts/GenderPieChart";
 import TierBarChart from "@/components/charts/TierBarChart";
 import SeriesBarChart from "@/components/charts/SeriesBarChart";
 import ProductsTable from "@/components/ProductsTable";
-import { formatRupiah } from "@/lib/utils";
 import "@/lib/chart-config";
 
 const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -351,6 +350,15 @@ function Dashboard() {
                             </tr>
                           ))}
                         </tbody>
+                        {storesData?.stores && storesData.stores.length > 0 && (
+                          <tfoot>
+                            <tr className="border-t-2 border-[#00E273] bg-muted/40 font-semibold">
+                              <td className="px-2 py-2 text-[9px] font-bold text-foreground" colSpan={2}>TOTAL</td>
+                              <td className="px-2 py-2 text-right font-mono text-foreground tabular-nums text-xs">{formatRupiah(storesData.stores.reduce((sum, s) => sum + s.revenue, 0))}</td>
+                              <td className="px-2 py-2"></td>
+                            </tr>
+                          </tfoot>
+                        )}
                       </table>
                     </div>
                   </div>
