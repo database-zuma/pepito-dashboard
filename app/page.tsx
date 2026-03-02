@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   BarChart3, Store, Package, RefreshCw, MapPin, DollarSign,
-  ShoppingBag, Hash, TrendingUp, X,
+  ShoppingBag, Hash, TrendingUp, X, ChevronDown, Check,
 } from "lucide-react";
 import { formatRupiah, formatNumber, formatRupiahFull } from "@/lib/utils";
 import type {
@@ -32,28 +32,31 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
 
 /* ── Active filters state ────────────────────────────────── */
 interface Filters {
-  year: string;
-  month: string;
-  region: string;
-  store: string;
-  gender: string;
-  series: string;
-  tier: string;
-  tipe: string;
+  year: string[];
+  month: string[];
+  region: string[];
+  store: string[];
+  gender: string[];
+  series: string[];
+  tier: string[];
+  tipe: string[];
 }
 
 const EMPTY_FILTERS: Filters = {
-  year: "", month: "", region: "", store: "", gender: "", series: "", tier: "", tipe: "",
+  year: [], month: [], region: [], store: [],
+  gender: [], series: [], tier: [], tipe: [],
 };
 
 function filtersToParams(f: Filters): URLSearchParams {
   const p = new URLSearchParams();
-  Object.entries(f).forEach(([k, v]) => { if (v) p.set(k, v); });
+  Object.entries(f).forEach(([k, v]) => {
+    if (Array.isArray(v) && v.length > 0) p.set(k, v.join(","));
+  });
   return p;
 }
 
 function countActive(f: Filters): number {
-  return Object.values(f).filter(Boolean).length;
+  return Object.values(f).filter(v => Array.isArray(v) && v.length > 0).length;
 }
 
 /* ── Components ──────────────────────────────────────────── */
@@ -122,27 +125,118 @@ function SectionHeader({ icon: Icon, label }: { icon: React.ComponentType<{ clas
   );
 }
 
-/* ── Filter Select ───────────────────────────────────────── */
-function FilterSelect({
-  label, value, onChange, options, placeholder,
+/* ── Multi-Select Filter ─────────────────────────────────── */
+function MultiSelect({
+  label, filterKey, options, selected, onToggle, onClear, onSelectAll,
 }: {
   label: string;
-  value: string;
-  onChange: (v: string) => void;
+  filterKey: string;
   options: string[];
-  placeholder: string;
+  selected: string[];
+  onToggle: (val: string) => void;
+  onClear: () => void;
+  onSelectAll: (all: string[]) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(
+    () => search ? options.filter(o => o.toLowerCase().includes(search.toLowerCase())) : options,
+    [options, search]
+  );
+
+  const allSelected = filtered.length > 0 && filtered.every(o => selected.includes(o));
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  useEffect(() => {
+    if (!open) setSearch("");
+    else setTimeout(() => inputRef.current?.focus(), 0);
+  }, [open]);
+
+  const labelText = selected.length === 0 ? label
+    : selected.length === 1 ? selected[0]
+    : `${selected.length} selected`;
+
   return (
-    <div className="flex flex-col gap-0.5">
-      <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</label>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="text-xs border border-border rounded-sm px-2 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-[#00E273]/40 min-w-[100px]"
-      >
-        <option value="">{placeholder}</option>
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
+    <div ref={ref} className="relative flex-1 min-w-[90px]">
+      <div className="flex flex-col gap-0.5">
+        <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</label>
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          className={`w-full inline-flex items-center justify-between gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-sm border bg-card text-card-foreground hover:bg-muted transition-colors whitespace-nowrap
+            ${selected.length > 0 ? "border-[#00E273]" : "border-border"}`}
+        >
+          <span className="truncate">{labelText}</span>
+          <ChevronDown className={`size-3.5 flex-shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 min-w-[160px] w-max max-w-[240px] rounded-sm border border-border bg-card shadow-lg">
+          <div className="p-1.5 border-b border-border">
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Search..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full text-xs px-2 py-1 rounded-sm border border-border bg-background text-foreground placeholder:text-muted-foreground outline-none focus:border-[#00E273]"
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length > 0 && (
+              <button
+                type="button"
+                onClick={() => allSelected ? onClear() : onSelectAll(filtered)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted transition-colors border-b border-border"
+              >
+                <span className={`size-4 rounded-sm flex items-center justify-center flex-shrink-0 border transition-colors ${allSelected ? "bg-[#00E273] border-[#00E273]" : "border-border bg-background"}`}>
+                  {allSelected && <Check className="size-2.5 text-black stroke-[3]" />}
+                </span>
+                <span className="text-muted-foreground">Select All</span>
+              </button>
+            )}
+            {selected.length > 0 && (
+              <button
+                type="button"
+                onClick={onClear}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:bg-muted transition-colors border-b border-border"
+              >
+                <X className="size-3" />
+                Clear {label}
+              </button>
+            )}
+            {filtered.length === 0 && (
+              <p className="px-3 py-2 text-xs text-muted-foreground">No results</p>
+            )}
+            {filtered.map(opt => {
+              const checked = selected.includes(opt);
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => onToggle(opt)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted transition-colors text-left"
+                >
+                  <span className={`size-4 rounded-sm flex items-center justify-center flex-shrink-0 border transition-colors ${checked ? "bg-[#00E273] border-[#00E273]" : "border-border bg-background"}`}>
+                    {checked && <Check className="size-2.5 text-black stroke-[3]" />}
+                  </span>
+                  <span className="truncate">{opt}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -172,8 +266,16 @@ export default function Dashboard() {
       .catch(console.error);
   }, []);
 
-  const setFilter = useCallback((key: keyof Filters, val: string) => {
-    setFilters((prev) => ({ ...prev, [key]: val }));
+  const toggleFilter = useCallback((key: keyof Filters, val: string) => {
+    setFilters((prev) => {
+      const arr = prev[key];
+      const next = arr.includes(val) ? arr.filter(v => v !== val) : [...arr, val];
+      return { ...prev, [key]: next };
+    });
+  }, []);
+
+  const setFilterArr = useCallback((key: keyof Filters, vals: string[]) => {
+    setFilters((prev) => ({ ...prev, [key]: vals }));
   }, []);
 
   const resetFilters = useCallback(() => setFilters(EMPTY_FILTERS), []);
@@ -243,22 +345,46 @@ export default function Dashboard() {
 
           {/* Filter bar */}
           <div className="flex flex-wrap items-end gap-3 p-3 bg-card border border-border rounded-sm">
-            <FilterSelect label="Year" value={filters.year} onChange={(v) => setFilter("year", v)}
-              options={filterOptions?.years ?? []} placeholder="All Years" />
-            <FilterSelect label="Month" value={filters.month} onChange={(v) => setFilter("month", v)}
-              options={Array.from({ length: 12 }, (_, i) => String(i + 1))} placeholder="All Months" />
-            <FilterSelect label="Region" value={filters.region} onChange={(v) => setFilter("region", v)}
-              options={filterOptions?.regions ?? []} placeholder="All Regions" />
-            <FilterSelect label="Store" value={filters.store} onChange={(v) => setFilter("store", v)}
-              options={filterOptions?.stores ?? []} placeholder="All Stores" />
-            <FilterSelect label="Gender" value={filters.gender} onChange={(v) => setFilter("gender", v)}
-              options={filterOptions?.genders ?? []} placeholder="All Genders" />
-            <FilterSelect label="Series" value={filters.series} onChange={(v) => setFilter("series", v)}
-              options={filterOptions?.series ?? []} placeholder="All Series" />
-            <FilterSelect label="Tier" value={filters.tier} onChange={(v) => setFilter("tier", v)}
-              options={filterOptions?.tiers ?? []} placeholder="All Tiers" />
-            <FilterSelect label="Tipe" value={filters.tipe} onChange={(v) => setFilter("tipe", v)}
-              options={filterOptions?.tipes ?? []} placeholder="All Tipes" />
+            <MultiSelect label="YEAR" filterKey="year" options={filterOptions?.years ?? []}
+              selected={filters.year}
+              onToggle={(v) => toggleFilter("year", v)}
+              onClear={() => setFilterArr("year", [])}
+              onSelectAll={(all) => setFilterArr("year", all)} />
+            <MultiSelect label="MONTH" filterKey="month" options={Array.from({ length: 12 }, (_, i) => String(i + 1))}
+              selected={filters.month}
+              onToggle={(v) => toggleFilter("month", v)}
+              onClear={() => setFilterArr("month", [])}
+              onSelectAll={(all) => setFilterArr("month", all)} />
+            <MultiSelect label="REGION" filterKey="region" options={filterOptions?.regions ?? []}
+              selected={filters.region}
+              onToggle={(v) => toggleFilter("region", v)}
+              onClear={() => setFilterArr("region", [])}
+              onSelectAll={(all) => setFilterArr("region", all)} />
+            <MultiSelect label="STORE" filterKey="store" options={filterOptions?.stores ?? []}
+              selected={filters.store}
+              onToggle={(v) => toggleFilter("store", v)}
+              onClear={() => setFilterArr("store", [])}
+              onSelectAll={(all) => setFilterArr("store", all)} />
+            <MultiSelect label="GENDER" filterKey="gender" options={filterOptions?.genders ?? []}
+              selected={filters.gender}
+              onToggle={(v) => toggleFilter("gender", v)}
+              onClear={() => setFilterArr("gender", [])}
+              onSelectAll={(all) => setFilterArr("gender", all)} />
+            <MultiSelect label="SERIES" filterKey="series" options={filterOptions?.series ?? []}
+              selected={filters.series}
+              onToggle={(v) => toggleFilter("series", v)}
+              onClear={() => setFilterArr("series", [])}
+              onSelectAll={(all) => setFilterArr("series", all)} />
+            <MultiSelect label="TIER" filterKey="tier" options={filterOptions?.tiers ?? []}
+              selected={filters.tier}
+              onToggle={(v) => toggleFilter("tier", v)}
+              onClear={() => setFilterArr("tier", [])}
+              onSelectAll={(all) => setFilterArr("tier", all)} />
+            <MultiSelect label="TIPE" filterKey="tipe" options={filterOptions?.tipes ?? []}
+              selected={filters.tipe}
+              onToggle={(v) => toggleFilter("tipe", v)}
+              onClear={() => setFilterArr("tipe", [])}
+              onSelectAll={(all) => setFilterArr("tipe", all)} />
             {activeCount > 0 && (
               <div className="flex flex-col gap-0.5">
                 <label className="text-[10px] opacity-0 select-none">·</label>

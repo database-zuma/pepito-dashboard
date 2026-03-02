@@ -14,23 +14,28 @@ export function buildPepitoWhere(
     return params.length;
   };
 
-  const year = searchParams.get("year");
-  const month = searchParams.get("month");
-  const region = searchParams.get("region");
-  const store = searchParams.get("store");
-  const gender = searchParams.get("gender");
-  const series = searchParams.get("series");
-  const tier = searchParams.get("tier");
-  const tipe = searchParams.get("tipe");
+  const getArr = (key: string): string[] => {
+    const val = searchParams.get(key);
+    return val ? val.split(",").map(v => v.trim()).filter(Boolean) : [];
+  };
 
-  if (year) clause += ` AND period_year = $${push(parseInt(year))}`;
-  if (month) clause += ` AND period_month = $${push(parseInt(month))}`;
-  if (region) clause += ` AND region = $${push(region)}`;
-  if (store) clause += ` AND store_canonical = $${push(store)}`;
-  if (gender) clause += ` AND item_gender = $${push(gender)}`;
-  if (series) clause += ` AND item_seri = $${push(series)}`;
-  if (tier) clause += ` AND item_tier = $${push(tier)}`;
-  if (tipe) clause += ` AND item_tipe = $${push(tipe)}`;
+  const years = getArr("year").map(Number).filter(n => !isNaN(n));
+  const months = getArr("month").map(Number).filter(n => !isNaN(n));
+  const regions = getArr("region");
+  const stores = getArr("store");
+  const genders = getArr("gender");
+  const series = getArr("series");
+  const tiers = getArr("tier");
+  const tipes = getArr("tipe");
+
+  if (years.length) clause += ` AND period_year = ANY($${push(years)})`;
+  if (months.length) clause += ` AND period_month = ANY($${push(months)})`;
+  if (regions.length) clause += ` AND region = ANY($${push(regions)})`;
+  if (stores.length) clause += ` AND store_canonical = ANY($${push(stores)})`;
+  if (genders.length) clause += ` AND item_gender = ANY($${push(genders)})`;
+  if (series.length) clause += ` AND item_seri = ANY($${push(series)})`;
+  if (tiers.length) clause += ` AND item_tier = ANY($${push(tiers)})`;
+  if (tipes.length) clause += ` AND item_tipe = ANY($${push(tipes)})`;
 
   return { clause, params };
 }
