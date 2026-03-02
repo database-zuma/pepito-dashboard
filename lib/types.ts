@@ -93,3 +93,27 @@ export interface FilterOptions {
   tiers: string[];
   tipes: string[];
 }
+
+
+
+export type Tab = "executive" | "sku-chart" | "detail-kode" | "detail-size" | "promo";
+
+export interface KpiMetrics {
+  revenue: number;
+  pairs: number;
+  transactions: number;
+  atu: number;
+  asp: number;
+  atv: number;
+}
+
+export interface DateRange {
+  startDate: string | null;
+  endDate: string | null;
+}
+
+export interface PaginationState {
+  page: number;
+  pageSize: number;
+  total: number;
+}
