@@ -9,9 +9,9 @@ interface KpiCardsProps {
 }
 
 const KPI_CONFIG = [
-  { label: "REVENUE", key: "totalRevenue", format: (v: number) => formatRupiah(v ?? 0), subtitle: "" },
-  { label: "PAIRS SOLD", key: "totalQty", format: (v: number) => formatNumber(v ?? 0), subtitle: "" },
-  { label: "TRANSACTIONS", key: "totalInvoices", format: (v: number) => formatNumber(v ?? 0), subtitle: "" },
+  { label: "REVENUE", key: "revenue", format: (v: number) => formatRupiah(v ?? 0), subtitle: "" },
+  { label: "PAIRS SOLD", key: "pairs", format: (v: number) => formatNumber(v ?? 0), subtitle: "" },
+  { label: "TRANSACTIONS", key: "transactions", format: (v: number) => formatNumber(v ?? 0), subtitle: "" },
   { label: "ATU", key: "atu", format: (v: number) => (v ?? 0).toFixed(1), subtitle: "Avg Pairs/Transaction" },
   { label: "ASP", key: "asp", format: (v: number) => formatRupiah(v ?? 0), subtitle: "Avg Selling Price" },
   { label: "ATV", key: "atv", format: (v: number) => formatRupiah(v ?? 0), subtitle: "Avg Transaction Value" },
