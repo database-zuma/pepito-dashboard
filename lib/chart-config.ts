@@ -7,6 +7,10 @@ import {
   LineElement,
   PointElement,
   ArcElement,
+  BarController,
+  LineController,
+  PieController,
+  DoughnutController,
   Title,
   Tooltip,
   Legend,
@@ -20,6 +24,10 @@ ChartJS.register(
   LineElement,
   PointElement,
   ArcElement,
+  BarController,
+  LineController,
+  PieController,
+  DoughnutController,
   Title,
   Tooltip,
   Legend,
@@ -48,7 +56,6 @@ export const PIE_COLORS = [
   "#D4D4D4",
 ];
 
-// Set Chart.js defaults
 if (typeof window !== "undefined") {
   ChartJS.defaults.font.family = "Geist, system-ui, -apple-system, sans-serif";
   ChartJS.defaults.color = "#6b7280";
