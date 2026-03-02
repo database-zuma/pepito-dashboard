@@ -69,3 +69,27 @@ export interface CategoryBreakdown {
   qty: number;
   skus: number;
 }
+
+export interface SeriesBreakdown {
+  series: string;
+  revenue: number;
+  qty: number;
+  skus: number;
+}
+
+export interface TierBreakdown {
+  tier: string;
+  revenue: number;
+  qty: number;
+  skus: number;
+}
+
+export interface FilterOptions {
+  years: string[];
+  regions: string[];
+  stores: string[];
+  genders: string[];
+  series: string[];
+  tiers: string[];
+  tipes: string[];
+}

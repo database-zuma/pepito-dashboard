@@ -3,14 +3,21 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   BarChart3, Store, Package, RefreshCw, MapPin, DollarSign,
-  ShoppingBag, Hash, TrendingUp,
+  ShoppingBag, Hash, TrendingUp, X,
 } from "lucide-react";
 import { formatRupiah, formatNumber, formatRupiahFull } from "@/lib/utils";
-import type { OverviewData, StoreData, ProductData, CategoryBreakdown } from "@/lib/types";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import type {
+  OverviewData, StoreData, ProductData, CategoryBreakdown,
+  SeriesBreakdown, TierBreakdown, FilterOptions,
+} from "@/lib/types";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+} from "recharts";
 import type { PieLabelRenderProps } from "recharts";
 
 type Tab = "overview" | "stores" | "products";
+
 const COLORS = ["#002A3A", "#00E273", "#4A7C8F", "#6BAE9E", "#A8D5C2", "#8884d8", "#82ca9d", "#ffc658"];
 const STORE_TYPE_COLORS: Record<string, string> = {
   Supermarket: "#002A3A", Market: "#00E273", Express: "#4A7C8F",
@@ -23,9 +30,34 @@ const TABS: { id: Tab; label: string; icon: React.ComponentType<{ className?: st
   { id: "products", label: "Products", icon: Package },
 ];
 
-const MONTH_NAMES = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/* ── Active filters state ────────────────────────────────── */
+interface Filters {
+  year: string;
+  month: string;
+  region: string;
+  store: string;
+  gender: string;
+  series: string;
+  tier: string;
+  tipe: string;
+}
 
-/* ── Metric Card ─────────────────────────────────────────── */
+const EMPTY_FILTERS: Filters = {
+  year: "", month: "", region: "", store: "", gender: "", series: "", tier: "", tipe: "",
+};
+
+function filtersToParams(f: Filters): URLSearchParams {
+  const p = new URLSearchParams();
+  Object.entries(f).forEach(([k, v]) => { if (v) p.set(k, v); });
+  return p;
+}
+
+function countActive(f: Filters): number {
+  return Object.values(f).filter(Boolean).length;
+}
+
+/* ── Components ──────────────────────────────────────────── */
+
 function MetricCard({ icon: Icon, label, value, sub }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string; value: string; sub?: string;
@@ -44,7 +76,6 @@ function MetricCard({ icon: Icon, label, value, sub }: {
   );
 }
 
-/* ── States ──────────────────────────────────────────────── */
 function LoadingState() {
   return (
     <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -62,7 +93,6 @@ function ErrorState({ message }: { message: string }) {
   );
 }
 
-/* ── Chart Tooltip ───────────────────────────────────────── */
 function CustomTooltip({ active, payload, label }: {
   active?: boolean;
   payload?: Array<{ value: number; name: string; color: string }>;
@@ -74,7 +104,7 @@ function CustomTooltip({ active, payload, label }: {
       <p className="font-semibold text-foreground mb-1">{label}</p>
       {payload.map((p, i) => (
         <p key={i} style={{ color: p.color }} className="tabular-nums">
-          {p.name}: {p.name.toLowerCase().includes("revenue") || p.name.toLowerCase().includes("avg price")
+          {p.name}: {["revenue", "avg price", "avg_price"].some((s) => p.name.toLowerCase().includes(s))
             ? formatRupiahFull(p.value)
             : formatNumber(p.value)}
         </p>
@@ -83,7 +113,6 @@ function CustomTooltip({ active, payload, label }: {
   );
 }
 
-/* ── Section Header ──────────────────────────────────────── */
 function SectionHeader({ icon: Icon, label }: { icon: React.ComponentType<{ className?: string }>; label: string }) {
   return (
     <div className="flex items-center gap-2 mb-3">
@@ -93,77 +122,105 @@ function SectionHeader({ icon: Icon, label }: { icon: React.ComponentType<{ clas
   );
 }
 
+/* ── Filter Select ───────────────────────────────────────── */
+function FilterSelect({
+  label, value, onChange, options, placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="text-xs border border-border rounded-sm px-2 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-[#00E273]/40 min-w-[100px]"
+      >
+        <option value="">{placeholder}</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
+
 /* ── Dashboard Shell ─────────────────────────────────────── */
 export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("overview");
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
+
   const [overviewData, setOverviewData] = useState<OverviewData | null>(null);
   const [storesData, setStoresData] = useState<StoreData[] | null>(null);
-  const [productsData, setProductsData] = useState<{ topProducts: ProductData[]; categoryBreakdown: CategoryBreakdown[] } | null>(null);
-  const [year, setYear] = useState<string>("");
-  const [month, setMonth] = useState<string>("");
+  const [productsData, setProductsData] = useState<{
+    topProducts: ProductData[];
+    categoryBreakdown: CategoryBreakdown[];
+    seriesBreakdown: SeriesBreakdown[];
+    tierBreakdown: TierBreakdown[];
+  } | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterYears, setFilterYears] = useState<number[]>([]);
+
+  useEffect(() => {
+    fetch("/api/pepito/filters")
+      .then((r) => r.json())
+      .then(setFilterOptions)
+      .catch(console.error);
+  }, []);
+
+  const setFilter = useCallback((key: keyof Filters, val: string) => {
+    setFilters((prev) => ({ ...prev, [key]: val }));
+  }, []);
+
+  const resetFilters = useCallback(() => setFilters(EMPTY_FILTERS), []);
 
   const fetchOverview = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams();
-      if (year) params.set("year", year);
-      if (month) params.set("month", month);
-      const res = await fetch(`/api/pepito/overview?${params}`);
+      const res = await fetch(`/api/pepito/overview?${filtersToParams(filters)}`);
       if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setOverviewData(data);
-      if (data.monthlyTrend?.length > 0) {
-        const years = [...new Set(data.monthlyTrend.map((t: { period: string }) => parseInt(t.period.split("-")[0])))] as number[];
-        setFilterYears(years.sort());
-      }
+      setOverviewData(await res.json());
     } catch (e) { setError(e instanceof Error ? e.message : "Unknown error"); }
     finally { setLoading(false); }
-  }, [year, month]);
+  }, [filters]);
 
   const fetchStores = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams();
-      if (year) params.set("year", year);
-      if (month) params.set("month", month);
-      const res = await fetch(`/api/pepito/stores?${params}`);
+      const res = await fetch(`/api/pepito/stores?${filtersToParams(filters)}`);
       if (!res.ok) throw new Error("Failed to fetch");
       const data = await res.json();
       setStoresData(data.stores);
     } catch (e) { setError(e instanceof Error ? e.message : "Unknown error"); }
     finally { setLoading(false); }
-  }, [year, month]);
+  }, [filters]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams();
-      if (year) params.set("year", year);
-      if (month) params.set("month", month);
-      const res = await fetch(`/api/pepito/products?${params}`);
+      const res = await fetch(`/api/pepito/products?${filtersToParams(filters)}`);
       if (!res.ok) throw new Error("Failed to fetch");
-      const data = await res.json();
-      setProductsData(data);
+      setProductsData(await res.json());
     } catch (e) { setError(e instanceof Error ? e.message : "Unknown error"); }
     finally { setLoading(false); }
-  }, [year, month]);
+  }, [filters]);
 
   useEffect(() => {
     if (tab === "overview") fetchOverview();
     else if (tab === "stores") fetchStores();
     else if (tab === "products") fetchProducts();
-  }, [tab, fetchOverview, fetchStores, fetchProducts]);
+  }, [tab, filters, fetchOverview, fetchStores, fetchProducts]);
+
+  const activeCount = countActive(filters);
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Top accent bar */}
       <div className="h-1 bg-[#00E273]" />
-
       <div className="max-w-7xl mx-auto flex flex-col gap-4 p-4 md:p-6">
-        {/* Header */}
         <header className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -179,38 +236,37 @@ export default function Dashboard() {
                 <span className="font-semibold text-foreground">
                   {overviewData.freshness.earliestDate} → {overviewData.freshness.latestDate}
                 </span>
-                <span className="ml-2 text-muted-foreground">({formatNumber(overviewData.freshness.totalRows)} rows)</span>
+                <span className="ml-2">({formatNumber(overviewData.freshness.totalRows)} rows)</span>
               </span>
             )}
           </div>
 
-          {/* Filter row */}
-          <div className="flex items-center gap-2">
-            <select
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              className="text-xs border border-border rounded-sm px-2.5 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-[#00E273]/40"
-            >
-              <option value="">All Years</option>
-              {filterYears.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="text-xs border border-border rounded-sm px-2.5 py-1.5 bg-card text-foreground focus:outline-none focus:ring-1 focus:ring-[#00E273]/40"
-            >
-              <option value="">All Months</option>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <option key={m} value={m}>{MONTH_NAMES[m]}</option>
-              ))}
-            </select>
-            {(year || month) && (
-              <button
-                onClick={() => { setYear(""); setMonth(""); }}
-                className="text-[11px] text-muted-foreground hover:text-foreground border border-border rounded-sm px-2 py-1.5 bg-card transition-colors"
-              >
-                Reset
-              </button>
+          {/* Filter bar */}
+          <div className="flex flex-wrap items-end gap-3 p-3 bg-card border border-border rounded-sm">
+            <FilterSelect label="Year" value={filters.year} onChange={(v) => setFilter("year", v)}
+              options={filterOptions?.years ?? []} placeholder="All Years" />
+            <FilterSelect label="Month" value={filters.month} onChange={(v) => setFilter("month", v)}
+              options={Array.from({ length: 12 }, (_, i) => String(i + 1))} placeholder="All Months" />
+            <FilterSelect label="Region" value={filters.region} onChange={(v) => setFilter("region", v)}
+              options={filterOptions?.regions ?? []} placeholder="All Regions" />
+            <FilterSelect label="Store" value={filters.store} onChange={(v) => setFilter("store", v)}
+              options={filterOptions?.stores ?? []} placeholder="All Stores" />
+            <FilterSelect label="Gender" value={filters.gender} onChange={(v) => setFilter("gender", v)}
+              options={filterOptions?.genders ?? []} placeholder="All Genders" />
+            <FilterSelect label="Series" value={filters.series} onChange={(v) => setFilter("series", v)}
+              options={filterOptions?.series ?? []} placeholder="All Series" />
+            <FilterSelect label="Tier" value={filters.tier} onChange={(v) => setFilter("tier", v)}
+              options={filterOptions?.tiers ?? []} placeholder="All Tiers" />
+            <FilterSelect label="Tipe" value={filters.tipe} onChange={(v) => setFilter("tipe", v)}
+              options={filterOptions?.tipes ?? []} placeholder="All Tipes" />
+            {activeCount > 0 && (
+              <div className="flex flex-col gap-0.5">
+                <label className="text-[10px] opacity-0 select-none">·</label>
+                <button onClick={resetFilters}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground border border-border rounded-sm px-2.5 py-1.5 bg-muted/40 hover:bg-muted transition-colors">
+                  <X className="w-3 h-3" />Reset ({activeCount})
+                </button>
+              </div>
             )}
           </div>
         </header>
@@ -218,38 +274,23 @@ export default function Dashboard() {
         {/* Tab nav */}
         <nav className="flex flex-wrap gap-0.5 border-b-2 border-border pb-0">
           {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold transition-colors
-                ${tab === t.id
-                  ? "text-foreground border-b-[3px] border-[#00E273] -mb-[2px] bg-card"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50 -mb-[2px] border-b-[3px] border-transparent"
-                }`}
-            >
-              <t.icon className="w-3.5 h-3.5" />
-              {t.label}
+            <button key={t.id} type="button" onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold transition-colors ${ tab === t.id ? "text-foreground border-b-[3px] border-[#00E273] -mb-[2px] bg-card" : "text-muted-foreground hover:text-foreground hover:bg-muted/50 -mb-[2px] border-b-[3px] border-transparent"}`}>
+              <t.icon className="w-3.5 h-3.5" />{t.label}
             </button>
           ))}
         </nav>
 
-        {/* Main content */}
         <main className="flex flex-col gap-4">
-          {error
-            ? <ErrorState message={error} />
-            : loading
-            ? <LoadingState />
-            : tab === "overview" && overviewData
-            ? <OverviewTab data={overviewData} />
-            : tab === "stores" && storesData
-            ? <StoresTab stores={storesData} />
+          {error ? <ErrorState message={error} /> : loading ? <LoadingState />
+            : tab === "overview" && overviewData ? <OverviewTab data={overviewData} />
+            : tab === "stores" && storesData ? <StoresTab stores={storesData} />
             : tab === "products" && productsData
-            ? <ProductsTab products={productsData.topProducts} categories={productsData.categoryBreakdown} />
+              ? <ProductsTab products={productsData.topProducts} categories={productsData.categoryBreakdown}
+                  seriesBreakdown={productsData.seriesBreakdown} tierBreakdown={productsData.tierBreakdown} />
             : <LoadingState />}
         </main>
 
-        {/* Footer */}
         <footer className="text-[10px] text-muted-foreground pt-4 border-t border-border flex items-center gap-1.5">
           <div className="w-1.5 h-1.5 rounded-full bg-[#00E273]" />
           Zuma Indonesia · Pepito Consignment Analytics
@@ -264,15 +305,12 @@ function OverviewTab({ data }: { data: OverviewData }) {
   const { metrics, monthlyTrend, topStores, regionSplit } = data;
   return (
     <div className="flex flex-col gap-4">
-      {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard icon={DollarSign} label="Total Revenue" value={formatRupiah(metrics.totalRevenue)} />
         <MetricCard icon={ShoppingBag} label="Pairs Sold" value={formatNumber(metrics.totalQty)} />
         <MetricCard icon={Store} label="Active Stores" value={metrics.totalStores.toString()} sub={`${metrics.totalInvoices} invoices`} />
         <MetricCard icon={Hash} label="SKUs Sold" value={formatNumber(metrics.totalSkus)} sub={`Avg ${formatRupiah(metrics.avgRevenuePerStore)}/store`} />
       </div>
-
-      {/* Monthly trend */}
       <div className="bg-card border border-border p-4">
         <SectionHeader icon={TrendingUp} label="Monthly Revenue Trend" />
         <div className="h-64">
@@ -287,8 +325,6 @@ function OverviewTab({ data }: { data: OverviewData }) {
           </ResponsiveContainer>
         </div>
       </div>
-
-      {/* Top stores + Region split */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-card border border-border p-4">
           <SectionHeader icon={Store} label="Top 10 Stores by Revenue" />
@@ -304,21 +340,13 @@ function OverviewTab({ data }: { data: OverviewData }) {
             </ResponsiveContainer>
           </div>
         </div>
-
         <div className="bg-card border border-border p-4">
           <SectionHeader icon={MapPin} label="Bali vs Lombok" />
           <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={regionSplit}
-                  cx="50%" cy="50%"
-                  outerRadius={90}
-                  dataKey="revenue"
-                  nameKey="region"
-                  label={(props: PieLabelRenderProps) => `${props.name || ''} (${((props.percent || 0) * 100).toFixed(0)}%)`}
-                  labelLine={false}
-                >
+                <Pie data={regionSplit} cx="50%" cy="50%" outerRadius={90} dataKey="revenue" nameKey="region"
+                  label={(props: PieLabelRenderProps) => `${props.name || ''} (${((props.percent || 0) * 100).toFixed(0)}%)`} labelLine={false}>
                   {regionSplit.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip formatter={(value) => formatRupiahFull(Number(value))} />
@@ -348,53 +376,33 @@ function StoresTab({ stores }: { stores: StoreData[] }) {
   const typeBreakdown = stores.reduce((acc, s) => {
     const existing = acc.find((a) => a.type === s.storeType);
     if (existing) { existing.revenue += s.revenue; existing.count += 1; }
-    else { acc.push({ type: s.storeType, revenue: s.revenue, count: 1 }); }
+    else acc.push({ type: s.storeType, revenue: s.revenue, count: 1 });
     return acc;
   }, [] as Array<{ type: string; revenue: number; count: number }>);
-
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Store type pie */}
         <div className="bg-card border border-border p-4">
           <SectionHeader icon={Store} label="Store Types" />
           <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={typeBreakdown}
-                  cx="50%" cy="50%"
-                  outerRadius={75}
-                  dataKey="revenue"
-                  nameKey="type"
-                  label={(props: PieLabelRenderProps) => `${props.name || ''}`}
-                  labelLine={false}
-                >
-                  {typeBreakdown.map((entry) => (
-                    <Cell key={entry.type} fill={STORE_TYPE_COLORS[entry.type] || COLORS[0]} />
-                  ))}
+                <Pie data={typeBreakdown} cx="50%" cy="50%" outerRadius={75} dataKey="revenue" nameKey="type"
+                  label={(props: PieLabelRenderProps) => `${props.name || ''}`} labelLine={false}>
+                  {typeBreakdown.map((entry) => <Cell key={entry.type} fill={STORE_TYPE_COLORS[entry.type] || COLORS[0]} />)}
                 </Pie>
                 <Tooltip formatter={(value) => formatRupiahFull(Number(value))} />
               </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
-
-        {/* Store ranking bar chart */}
         <div className="lg:col-span-2 bg-card border border-border p-4">
           <div className="flex items-center justify-between mb-3">
             <SectionHeader icon={BarChart3} label="All Stores — Revenue Ranking" />
             <div className="flex gap-1">
               {(["revenue", "qty", "avgPrice"] as const).map((key) => (
-                <button
-                  key={key}
-                  onClick={() => setSortBy(key)}
-                  className={`text-[10px] font-semibold px-2 py-1 rounded-sm border transition-colors ${
-                    sortBy === key
-                      ? "bg-[#002A3A] text-white border-[#002A3A]"
-                      : "bg-card text-muted-foreground border-border hover:border-foreground/30"
-                  }`}
-                >
+                <button key={key} onClick={() => setSortBy(key)}
+                  className={`text-[10px] font-semibold px-2 py-1 rounded-sm border transition-colors ${ sortBy === key ? "bg-[#002A3A] text-white border-[#002A3A]" : "bg-card text-muted-foreground border-border hover:border-foreground/30"}`}>
                   {key === "revenue" ? "Revenue" : key === "qty" ? "Qty" : "Avg Price"}
                 </button>
               ))}
@@ -413,45 +421,23 @@ function StoresTab({ stores }: { stores: StoreData[] }) {
           </div>
         </div>
       </div>
-
-      {/* Store table */}
       <div className="bg-card border border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Store Detail ({stores.length} stores)
-          </h3>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Store Detail ({stores.length} stores)</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-muted/40 text-left border-b border-border">
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">#</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Store</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Region</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Type</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] text-right">Revenue</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] text-right">Pairs</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] text-right">SKUs</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] text-right">Avg Price</th>
-              </tr>
-            </thead>
+            <thead><tr className="bg-muted/40 text-left border-b border-border">
+              {["#", "Store", "Region", "Type", "Revenue", "Pairs", "SKUs", "Avg Price"].map((h, i) => (
+                <th key={h} className={`px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] ${i >= 4 ? "text-right" : ""}`}>{h}</th>
+              ))}
+            </tr></thead>
             <tbody>
               {sorted.map((s, i) => (
-                <tr
-                  key={s.storeName}
-                  className={`border-t border-border/50 hover:bg-muted/30 transition-colors ${i % 2 === 0 ? "bg-card" : "bg-muted/20"}`}
-                >
+                <tr key={s.storeName} className={`border-t border-border/50 hover:bg-muted/30 transition-colors ${i % 2 === 0 ? "bg-card" : "bg-muted/20"}`}>
                   <td className="px-4 py-2 text-muted-foreground tabular-nums">{i + 1}</td>
                   <td className="px-4 py-2 font-medium text-foreground">{s.storeName}</td>
-                  <td className="px-4 py-2">
-                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-semibold border ${
-                      s.region === "Lombok"
-                        ? "bg-orange-50 text-orange-700 border-orange-200"
-                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    }`}>
-                      {s.region}
-                    </span>
-                  </td>
+                  <td className="px-4 py-2"><span className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-semibold border ${ s.region === "Lombok" ? "bg-orange-50 text-orange-700 border-orange-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>{s.region}</span></td>
                   <td className="px-4 py-2 text-muted-foreground">{s.storeType}</td>
                   <td className="px-4 py-2 text-right font-mono text-foreground tabular-nums">{formatRupiahFull(s.revenue)}</td>
                   <td className="px-4 py-2 text-right font-mono text-foreground tabular-nums">{formatNumber(s.qty)}</td>
@@ -468,25 +454,22 @@ function StoresTab({ stores }: { stores: StoreData[] }) {
 }
 
 /* ── Products Tab ────────────────────────────────────────── */
-function ProductsTab({ products, categories }: { products: ProductData[]; categories: CategoryBreakdown[] }) {
+function ProductsTab({ products, categories, seriesBreakdown, tierBreakdown }: {
+  products: ProductData[];
+  categories: CategoryBreakdown[];
+  seriesBreakdown: SeriesBreakdown[];
+  tierBreakdown: TierBreakdown[];
+}) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Category revenue pie */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-card border border-border p-4">
-          <SectionHeader icon={Package} label="Category Revenue Split" />
-          <div className="h-60">
+          <SectionHeader icon={Package} label="By Gender" />
+          <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={categories}
-                  cx="50%" cy="50%"
-                  outerRadius={90}
-                  dataKey="revenue"
-                  nameKey="category"
-                  label={(props: PieLabelRenderProps) => `${props.name || ''} (${((props.percent || 0) * 100).toFixed(0)}%)`}
-                  labelLine={false}
-                >
+                <Pie data={categories} cx="50%" cy="50%" outerRadius={80} dataKey="revenue" nameKey="category"
+                  label={(props: PieLabelRenderProps) => `${props.name || ''} (${((props.percent || 0) * 100).toFixed(0)}%)`} labelLine={false}>
                   {categories.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <Tooltip formatter={(value) => formatRupiahFull(Number(value))} />
@@ -495,50 +478,49 @@ function ProductsTab({ products, categories }: { products: ProductData[]; catego
             </ResponsiveContainer>
           </div>
         </div>
-
-        {/* Category qty bar */}
         <div className="bg-card border border-border p-4">
-          <SectionHeader icon={ShoppingBag} label="Category Qty (Pairs)" />
-          <div className="h-60">
+          <SectionHeader icon={BarChart3} label="By Tier" />
+          <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={categories} barCategoryGap="35%">
+              <BarChart data={tierBreakdown} barCategoryGap="35%">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="category" fontSize={10} tickLine={false} axisLine={false} tick={{ fill: "var(--muted-foreground)" }} />
-                <YAxis fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatNumber(v)} tick={{ fill: "var(--muted-foreground)" }} />
+                <XAxis dataKey="tier" fontSize={10} tickLine={false} axisLine={false} tick={{ fill: "var(--muted-foreground)" }} />
+                <YAxis fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => formatRupiah(v)} tick={{ fill: "var(--muted-foreground)" }} width={70} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="qty" name="Qty" fill="#00E273" radius={[1, 1, 0, 0]} />
+                <Bar dataKey="revenue" name="Revenue" fill="#002A3A" radius={[1, 1, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="bg-card border border-border p-4">
+          <SectionHeader icon={ShoppingBag} label="By Series (Top 15)" />
+          <div className="h-56 overflow-y-auto">
+            <ResponsiveContainer width="100%" height={seriesBreakdown.length * 22 + 20}>
+              <BarChart data={seriesBreakdown} layout="vertical" barCategoryGap="20%">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+                <XAxis type="number" fontSize={9} tickFormatter={(v) => formatRupiah(v)} tickLine={false} axisLine={false} tick={{ fill: "var(--muted-foreground)" }} />
+                <YAxis type="category" dataKey="series" width={70} fontSize={9} tickLine={false} tick={{ fill: "var(--muted-foreground)" }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Bar dataKey="revenue" name="Revenue" fill="#00E273" radius={[0, 1, 1, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
-
-      {/* Products table */}
       <div className="bg-card border border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border">
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Top 50 Products by Revenue
-          </h3>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Top 50 Products by Revenue</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-muted/40 text-left border-b border-border">
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">#</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Code</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Product Name</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] text-right">Revenue</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] text-right">Pairs</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] text-right">Stores</th>
-                <th className="px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] text-right">Avg Price</th>
-              </tr>
-            </thead>
+            <thead><tr className="bg-muted/40 text-left border-b border-border">
+              {["#", "Code", "Product Name", "Revenue", "Pairs", "Stores", "Avg Price"].map((h, i) => (
+                <th key={h} className={`px-4 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] ${i >= 3 ? "text-right" : ""}`}>{h}</th>
+              ))}
+            </tr></thead>
             <tbody>
               {products.map((p, i) => (
-                <tr
-                  key={p.itemCode}
-                  className={`border-t border-border/50 hover:bg-muted/30 transition-colors ${i % 2 === 0 ? "bg-card" : "bg-muted/20"}`}
-                >
+                <tr key={p.itemCode} className={`border-t border-border/50 hover:bg-muted/30 transition-colors ${i % 2 === 0 ? "bg-card" : "bg-muted/20"}`}>
                   <td className="px-4 py-2 text-muted-foreground tabular-nums">{i + 1}</td>
                   <td className="px-4 py-2 font-mono text-muted-foreground">{p.itemCode}</td>
                   <td className="px-4 py-2 text-foreground max-w-xs truncate">{p.itemName}</td>

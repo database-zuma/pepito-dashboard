@@ -1,32 +1,14 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { buildPepitoWhere } from "@/lib/filters";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const year = searchParams.get("year");
-  const month = searchParams.get("month");
-  const store = searchParams.get("store");
+  const { clause: where, params } = buildPepitoWhere(searchParams);
 
   try {
-    let whereClause = "WHERE 1=1";
-    const params: unknown[] = [];
-
-    if (year) {
-      params.push(parseInt(year));
-      whereClause += ` AND period_year = $${params.length}`;
-    }
-    if (month) {
-      params.push(parseInt(month));
-      whereClause += ` AND period_month = $${params.length}`;
-    }
-    if (store) {
-      params.push(store);
-      whereClause += ` AND store_canonical = $${params.length}`;
-    }
-
-    // Top products by revenue
     const topProducts = await query<{
       item_code: string;
       item_name: string;
@@ -44,20 +26,16 @@ export async function GET(request: Request) {
         CASE WHEN SUM(quantity) > 0 
           THEN SUM(total_price) / SUM(quantity) 
           ELSE 0 END AS avg_price
-      FROM core.pepito_sales
-      ${whereClause}
-      GROUP BY item_code
-      ORDER BY revenue DESC
-      LIMIT 50`,
+       FROM core.pepito_sales
+       ${where}
+       GROUP BY item_code
+       ORDER BY revenue DESC
+       LIMIT 50`,
       params
     );
 
-    // Product category breakdown (based on item_name patterns)
     const categoryBreakdown = await query<{
-      category: string;
-      revenue: string;
-      qty: string;
-      skus: string;
+      category: string; revenue: string; qty: string; skus: string;
     }>(
       `SELECT 
         CASE 
@@ -70,10 +48,43 @@ export async function GET(request: Request) {
         COALESCE(SUM(total_price), 0) AS revenue,
         COALESCE(SUM(quantity), 0) AS qty,
         COUNT(DISTINCT item_code) AS skus
-      FROM core.pepito_sales
-      ${whereClause}
-      GROUP BY category
-      ORDER BY revenue DESC`,
+       FROM core.pepito_sales
+       ${where}
+       GROUP BY category
+       ORDER BY revenue DESC`,
+      params
+    );
+
+    // Series breakdown
+    const seriesBreakdown = await query<{
+      series: string; revenue: string; qty: string; skus: string;
+    }>(
+      `SELECT 
+        COALESCE(item_seri, 'Unknown') AS series,
+        COALESCE(SUM(total_price), 0) AS revenue,
+        COALESCE(SUM(quantity), 0) AS qty,
+        COUNT(DISTINCT item_code) AS skus
+       FROM core.pepito_sales
+       ${where} AND item_seri IS NOT NULL
+       GROUP BY item_seri
+       ORDER BY revenue DESC
+       LIMIT 15`,
+      params
+    );
+
+    // Tier breakdown
+    const tierBreakdown = await query<{
+      tier: string; revenue: string; qty: string; skus: string;
+    }>(
+      `SELECT 
+        COALESCE(item_tier, 'Unknown') AS tier,
+        COALESCE(SUM(total_price), 0) AS revenue,
+        COALESCE(SUM(quantity), 0) AS qty,
+        COUNT(DISTINCT item_code) AS skus
+       FROM core.pepito_sales
+       ${where} AND item_tier IS NOT NULL
+       GROUP BY item_tier
+       ORDER BY tier`,
       params
     );
 
@@ -92,12 +103,21 @@ export async function GET(request: Request) {
         qty: parseFloat(r.qty),
         skus: parseInt(r.skus),
       })),
+      seriesBreakdown: seriesBreakdown.map((r) => ({
+        series: r.series,
+        revenue: parseFloat(r.revenue),
+        qty: parseFloat(r.qty),
+        skus: parseInt(r.skus),
+      })),
+      tierBreakdown: tierBreakdown.map((r) => ({
+        tier: r.tier,
+        revenue: parseFloat(r.revenue),
+        qty: parseFloat(r.qty),
+        skus: parseInt(r.skus),
+      })),
     });
   } catch (error) {
     console.error("Products API error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch products data" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch products data" }, { status: 500 });
   }
 }

@@ -1,27 +1,17 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { buildPepitoWhere } from "@/lib/filters";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const year = searchParams.get("year");
-  const month = searchParams.get("month");
+  const { clause: where, params } = buildPepitoWhere(
+    searchParams,
+    "WHERE store_canonical IS NOT NULL"
+  );
 
   try {
-    let whereClause = "WHERE store_canonical IS NOT NULL";
-    const params: unknown[] = [];
-
-    if (year) {
-      params.push(parseInt(year));
-      whereClause += ` AND period_year = $${params.length}`;
-    }
-    if (month) {
-      params.push(parseInt(month));
-      whereClause += ` AND period_month = $${params.length}`;
-    }
-
-    // All stores with metrics
     const stores = await query<{
       store_name: string;
       region: string;
@@ -52,40 +42,31 @@ export async function GET(request: Request) {
         CASE WHEN SUM(quantity) > 0 
           THEN SUM(total_price) / SUM(quantity) 
           ELSE 0 END AS avg_price
-      FROM core.pepito_sales
-      ${whereClause}
-      GROUP BY store_canonical, region
-      ORDER BY revenue DESC`,
+       FROM core.pepito_sales
+       ${where}
+       GROUP BY store_canonical, region
+       ORDER BY revenue DESC`,
       params
     );
 
-    // Store monthly breakdown (for sparklines / detail)
+    // Monthly breakdown per store (unfiltered by date so sparklines are full)
     const storeMonthly = await query<{
-      store_name: string;
-      period: string;
-      revenue: string;
-      qty: string;
+      store_name: string; period: string; revenue: string; qty: string;
     }>(
       `SELECT 
         store_canonical AS store_name,
         period_year || '-' || LPAD(period_month::text, 2, '0') AS period,
         COALESCE(SUM(total_price), 0) AS revenue,
         COALESCE(SUM(quantity), 0) AS qty
-      FROM core.pepito_sales
-      WHERE store_canonical IS NOT NULL AND period_year IS NOT NULL
-      GROUP BY store_canonical, period_year, period_month
-      ORDER BY store_canonical, period_year, period_month`
+       FROM core.pepito_sales
+       WHERE store_canonical IS NOT NULL AND period_year IS NOT NULL
+       GROUP BY store_canonical, period_year, period_month
+       ORDER BY store_canonical, period_year, period_month`
     );
 
-    // Group monthly data by store
-    const monthlyByStore: Record<
-      string,
-      Array<{ period: string; revenue: number; qty: number }>
-    > = {};
+    const monthlyByStore: Record<string, Array<{ period: string; revenue: number; qty: number }>> = {};
     for (const row of storeMonthly) {
-      if (!monthlyByStore[row.store_name]) {
-        monthlyByStore[row.store_name] = [];
-      }
+      if (!monthlyByStore[row.store_name]) monthlyByStore[row.store_name] = [];
       monthlyByStore[row.store_name].push({
         period: row.period,
         revenue: parseFloat(row.revenue),
@@ -108,9 +89,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Stores API error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch stores data" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch stores data" }, { status: 500 });
   }
 }

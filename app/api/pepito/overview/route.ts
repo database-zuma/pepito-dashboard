@@ -1,26 +1,14 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { buildPepitoWhere } from "@/lib/filters";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const year = searchParams.get("year");
-  const month = searchParams.get("month");
+  const { clause: where, params } = buildPepitoWhere(searchParams);
 
   try {
-    let whereClause = "WHERE 1=1";
-    const params: unknown[] = [];
-
-    if (year) {
-      params.push(parseInt(year));
-      whereClause += ` AND period_year = $${params.length}`;
-    }
-    if (month) {
-      params.push(parseInt(month));
-      whereClause += ` AND period_month = $${params.length}`;
-    }
-
     // Overview metrics
     const [metrics] = await query<{
       total_revenue: string;
@@ -39,78 +27,71 @@ export async function GET(request: Request) {
         CASE WHEN COUNT(DISTINCT store_canonical) > 0 
           THEN COALESCE(SUM(total_price), 0) / COUNT(DISTINCT store_canonical) 
           ELSE 0 END AS avg_revenue_per_store
-      FROM core.pepito_sales ${whereClause}`,
+       FROM core.pepito_sales ${where}`,
       params
     );
 
-    // Monthly trend
+    // Monthly trend — always full (not filtered by month so trend is visible)
+    const trendWhere = buildPepitoWhere(
+      (() => { const sp = new URLSearchParams(searchParams); sp.delete("month"); return sp; })()
+    );
     const monthlyTrend = await query<{
-      period: string;
-      revenue: string;
-      qty: string;
-      stores: string;
+      period: string; revenue: string; qty: string; stores: string;
     }>(
       `SELECT 
         period_year || '-' || LPAD(period_month::text, 2, '0') AS period,
         COALESCE(SUM(total_price), 0) AS revenue,
         COALESCE(SUM(quantity), 0) AS qty,
         COUNT(DISTINCT store_canonical) AS stores
-      FROM core.pepito_sales
-      WHERE period_year IS NOT NULL AND period_month IS NOT NULL
-      GROUP BY period_year, period_month
-      ORDER BY period_year, period_month`
+       FROM core.pepito_sales
+       ${trendWhere.clause} AND period_year IS NOT NULL AND period_month IS NOT NULL
+       GROUP BY period_year, period_month
+       ORDER BY period_year, period_month`,
+      trendWhere.params
     );
 
     // Top 10 stores by revenue
     const topStores = await query<{
-      store_name: string;
-      revenue: string;
-      qty: string;
-      skus: string;
+      store_name: string; revenue: string; qty: string; skus: string;
     }>(
       `SELECT 
         store_canonical AS store_name,
         COALESCE(SUM(total_price), 0) AS revenue,
         COALESCE(SUM(quantity), 0) AS qty,
         COUNT(DISTINCT item_code) AS skus
-      FROM core.pepito_sales
-      ${whereClause} AND store_canonical IS NOT NULL
-      GROUP BY store_canonical
-      ORDER BY revenue DESC
-      LIMIT 10`,
+       FROM core.pepito_sales
+       ${where} AND store_canonical IS NOT NULL
+       GROUP BY store_canonical
+       ORDER BY revenue DESC
+       LIMIT 10`,
       params
     );
 
-    // Region split (Bali vs Lombok)
+    // Region split
     const regionSplit = await query<{
-      region: string;
-      revenue: string;
-      qty: string;
-      stores: string;
+      region: string; revenue: string; qty: string; stores: string;
     }>(
       `SELECT 
         region,
         COALESCE(SUM(total_price), 0) AS revenue,
         COALESCE(SUM(quantity), 0) AS qty,
         COUNT(DISTINCT store_canonical) AS stores
-      FROM core.pepito_sales
-      ${whereClause} AND store_canonical IS NOT NULL
-      GROUP BY region
-      ORDER BY revenue DESC`,
+       FROM core.pepito_sales
+       ${where} AND store_canonical IS NOT NULL
+       GROUP BY region
+       ORDER BY revenue DESC`,
       params
     );
 
-    // Data freshness
+    // Data freshness (always global, unfiltered)
     const [freshness] = await query<{
-      latest_date: string;
-      earliest_date: string;
-      total_rows: string;
+      latest_date: string; earliest_date: string; total_rows: string;
     }>(
       `SELECT 
         MAX(invoice_date)::text AS latest_date,
         MIN(invoice_date)::text AS earliest_date,
         COUNT(*) AS total_rows
-      FROM core.pepito_sales`
+       FROM core.pepito_sales`
     );
 
     return NextResponse.json({
@@ -148,9 +129,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Overview API error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch overview data" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch overview data" }, { status: 500 });
   }
 }
