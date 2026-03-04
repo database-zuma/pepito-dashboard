@@ -211,13 +211,16 @@ function Dashboard() {
     { revalidateOnFocus: false, keepPreviousData: true }
   );
 
+  // Get detail param based on current tab
+  const detailParam = (tab === "detail-size" || tab === "sku-chart") ? "size" : "kode";
+
   const { data: productsData, isLoading: productsLoading } = useSWR<{
     topProducts: ProductData[];
     categoryBreakdown: CategoryBreakdown[];
     seriesBreakdown: SeriesBreakdown[];
     tierBreakdown: TierBreakdown[];
   }>(
-    `/api/pepito/products?${filterParams}`,
+    `/api/pepito/products?${filterParams}&detail=${detailParam}`,
     fetcher,
     { revalidateOnFocus: false, keepPreviousData: true }
   );

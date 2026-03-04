@@ -6,7 +6,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const detailType = searchParams.get("detail") || "kode"; // "kode" or "size"
   const { clause: where, params } = buildPepitoWhere(searchParams);
+
+  // Determine grouping column based on detail type
+  const groupCol = detailType === "size" ? "item_code" : "item_kode";
+  const codeCol = detailType === "size" ? "item_code" : "item_kode";
 
   try {
     const topProducts = await query<{
@@ -18,7 +23,7 @@ export async function GET(request: Request) {
       avg_price: string;
     }>(
       `SELECT 
-        item_code,
+        ${codeCol} AS item_code,
         MAX(item_name) AS item_name,
         COALESCE(SUM(total_price), 0) AS revenue,
         COALESCE(SUM(quantity), 0) AS qty,
@@ -28,7 +33,7 @@ export async function GET(request: Request) {
           ELSE 0 END AS avg_price
        FROM core.pepito_sales
        ${where}
-       GROUP BY item_code
+       GROUP BY ${groupCol}
        ORDER BY revenue DESC
        LIMIT 50`,
       params
