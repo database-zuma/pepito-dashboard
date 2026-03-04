@@ -332,16 +332,17 @@ function Dashboard() {
                   <PeriodChart data={overviewData.monthlyTrend} loading={overviewLoading} />
                   <RegionPieChart data={overviewData.regionSplit} loading={overviewLoading} />
                 </div>
-                <div className="flex flex-col gap-4">
-                  <div className="bg-card border border-border rounded-sm p-4">
+                <div className="flex flex-col gap-4 h-full">
+                  <div className="bg-card border border-border rounded-sm p-4 flex flex-col min-h-[560px]">
                     <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] mb-3">Store Ranking by Revenue</h3>
-                    <div className="overflow-y-auto" style={{ maxHeight: '560px' }}>
+                    <div className="overflow-y-auto flex-1">
                       <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-card">
                           <tr className="bg-muted/40 text-left border-b border-border">
                             <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px]">#</th>
                             <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px]">Store</th>
                             <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px] text-right">Revenue</th>
+                            <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px] text-right">Qty</th>
                             <th className="px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider text-[9px] text-right">Region</th>
                           </tr>
                         </thead>
@@ -351,21 +352,24 @@ function Dashboard() {
                               <td className="px-2 py-1.5 text-muted-foreground tabular-nums">{i + 1}</td>
                               <td className="px-2 py-1.5 text-foreground">{s.storeName}</td>
                               <td className="px-2 py-1.5 text-right font-mono text-foreground tabular-nums">{formatRupiah(s.revenue)}</td>
+                              <td className="px-2 py-1.5 text-right font-mono text-foreground tabular-nums">{formatNumber(s.qty)}</td>
                               <td className="px-2 py-1.5 text-muted-foreground">{s.region}</td>
                             </tr>
                           ))}
                         </tbody>
-                        {storesData?.stores && storesData.stores.length > 0 && (
-                          <tfoot>
-                            <tr className="border-t-2 border-[#00E273] bg-muted/40 font-semibold">
-                              <td className="px-2 py-2 text-[9px] font-bold text-foreground" colSpan={2}>TOTAL</td>
-                              <td className="px-2 py-2 text-right font-mono text-foreground tabular-nums text-xs">{formatRupiah(storesData.stores.reduce((sum, s) => sum + s.revenue, 0))}</td>
-                              <td className="px-2 py-2"></td>
-                            </tr>
-                          </tfoot>
-                        )}
                       </table>
                     </div>
+                    {storesData?.stores && storesData.stores.length > 0 && (
+                      <div className="border-t-2 border-[#00E273] bg-muted/40 font-semibold mt-auto pt-2">
+                        <div className="grid grid-cols-5 gap-2 px-2 text-xs">
+                          <span className="font-bold text-foreground">TOTAL</span>
+                          <span></span>
+                          <span className="text-right font-mono text-foreground tabular-nums">{formatRupiah(storesData.stores.reduce((sum, s) => sum + s.revenue, 0))}</span>
+                          <span className="text-right font-mono text-foreground tabular-nums">{formatNumber(storesData.stores.reduce((sum, s) => sum + s.qty, 0))}</span>
+                          <span></span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
