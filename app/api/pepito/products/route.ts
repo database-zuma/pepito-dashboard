@@ -10,8 +10,9 @@ export async function GET(request: Request) {
   const { clause: where, params } = buildPepitoWhere(searchParams);
 
   // Determine grouping column based on detail type
-  const groupCol = detailType === "size" ? "item_code" : "item_kode";
-  const codeCol = detailType === "size" ? "item_code" : "item_kode";
+  // Use COALESCE to handle NULL values so we don't lose data
+  const groupCol = detailType === "size" ? "item_code" : "COALESCE(item_kode, item_code)";
+  const codeCol = detailType === "size" ? "item_code" : "COALESCE(item_kode, item_code)";
 
   try {
     const topProducts = await query<{
