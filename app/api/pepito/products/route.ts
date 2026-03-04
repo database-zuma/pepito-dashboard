@@ -15,6 +15,16 @@ export async function GET(request: Request) {
   const codeCol = detailType === "size" ? "item_code" : "COALESCE(item_kode, item_code)";
 
   try {
+    // Get total revenue for summary (not affected by grouping/LIMIT)
+    const totalSummary = await query<{ total_revenue: string; total_qty: string }>(
+      `SELECT 
+        COALESCE(SUM(total_price), 0) AS total_revenue,
+        COALESCE(SUM(quantity), 0) AS total_qty
+       FROM core.pepito_sales
+       ${where}`,
+      params
+    );
+
     const topProducts = await query<{
       item_code: string;
       item_name: string;
@@ -95,6 +105,9 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json({
+
+      totalRevenue: parseFloat(String(totalSummary[0]?.total_revenue || 0)),
+      totalQty: parseFloat(String(totalSummary[0]?.total_qty || 0)),
       topProducts: topProducts.map((r) => ({
         itemCode: r.item_code,
         itemName: r.item_name,

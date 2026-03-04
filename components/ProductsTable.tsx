@@ -8,9 +8,11 @@ import type { ProductData } from "@/lib/types";
 interface ProductsTableProps {
   data?: ProductData[];
   loading?: boolean;
+  totalRevenue?: number;
+  totalQty?: number;
 }
 
-export default function ProductsTable({ data, loading }: ProductsTableProps) {
+export default function ProductsTable({ data, loading, totalRevenue, totalQty }: ProductsTableProps) {
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
@@ -20,10 +22,10 @@ export default function ProductsTable({ data, loading }: ProductsTableProps) {
 
   const totalPages = Math.ceil(data.length / pageSize);
   const paged = data.slice((page - 1) * pageSize, page * pageSize);
-  const totals = data.reduce(
-    (acc, p) => ({ revenue: acc.revenue + p.revenue, qty: acc.qty + p.qty }),
-    { revenue: 0, qty: 0 }
-  );
+  
+  // Use provided totals from API, or fall back to summing topProducts
+  const displayRevenue = totalRevenue ?? data.reduce((acc, p) => acc + p.revenue, 0);
+  const displayQty = totalQty ?? data.reduce((acc, p) => acc + p.qty, 0);
 
   const handleExport = () => {
     exportToCSV(
@@ -74,8 +76,8 @@ export default function ProductsTable({ data, loading }: ProductsTableProps) {
             ))}
             <tr className="border-t-2 border-[#00E273] bg-muted/20 font-semibold">
               <td className="px-3 py-2.5" colSpan={3}>TOTAL</td>
-              <td className="px-3 py-2.5 text-right font-mono text-foreground tabular-nums">{formatRupiah(totals.revenue)}</td>
-              <td className="px-3 py-2.5 text-right font-mono text-foreground tabular-nums">{formatNumber(totals.qty)}</td>
+              <td className="px-3 py-2.5 text-right font-mono text-foreground tabular-nums">{formatRupiah(displayRevenue)}</td>
+              <td className="px-3 py-2.5 text-right font-mono text-foreground tabular-nums">{formatNumber(displayQty)}</td>
               <td className="px-3 py-2.5"></td>
               <td className="px-3 py-2.5"></td>
             </tr>

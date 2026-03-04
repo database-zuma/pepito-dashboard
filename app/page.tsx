@@ -219,6 +219,8 @@ function Dashboard() {
     categoryBreakdown: CategoryBreakdown[];
     seriesBreakdown: SeriesBreakdown[];
     tierBreakdown: TierBreakdown[];
+    totalRevenue?: number;
+    totalQty?: number;
   }>(
     `/api/pepito/products?${filterParams}&detail=${detailParam}`,
     fetcher,
@@ -377,16 +379,16 @@ function Dashboard() {
                 <TierBarChart data={productsData.tierBreakdown} loading={productsLoading} />
                 <SeriesBarChart data={productsData.seriesBreakdown} loading={productsLoading} />
               </div>
-              <ProductsTable data={productsData.topProducts} loading={productsLoading} />
+            <ProductsTable data={productsData.topProducts} loading={productsLoading} totalRevenue={productsData.totalRevenue} totalQty={productsData.totalQty} />
             </div>
           )}
 
           {tab === "detail-kode" && productsData && !loading && (
-            <ProductsTable data={productsData.topProducts} loading={productsLoading} />
+            <ProductsTable data={productsData.topProducts} loading={productsLoading} totalRevenue={productsData.totalRevenue} totalQty={productsData.totalQty} />
           )}
 
           {tab === "detail-size" && productsData && !loading && (
-            <ProductsTable data={productsData.topProducts} loading={productsLoading} />
+            <ProductsTable data={productsData.topProducts} loading={productsLoading} totalRevenue={productsData.totalRevenue} totalQty={productsData.totalQty} />
           )}
         </main>
 
